@@ -1,15 +1,14 @@
-import { Body, Controller, HttpCode, Post } from '@nestjs/common';
+import { Controller, Get } from '@nestjs/common';
 import { AppService } from './app.service';
-import { CreateAccountParams } from './dto/app.input';
-import { Account } from './account.entity';
+import { ApiTags } from '@nestjs/swagger';
 
-@Controller('/account')
+@Controller('/')
+@ApiTags('healthcheck')
 export class AppController {
   constructor(private readonly appService: AppService) {}
 
-  @Post()
-  @HttpCode(201)
-  createAccount(@Body() params: CreateAccountParams): Promise<Account> {
-    return this.appService.createAccount(params);
+  @Get()
+  getStatus(): string {
+    return this.appService.getStatus();
   }
 }
