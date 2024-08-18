@@ -1,0 +1,24 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres
+    container_name: gp-postgres
+    volumes:
+      - gp_postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: grupoprimo
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    networks:
+      - gp-network
+    ports:
+      - 5432:5432
+
+volumes:
+  gp_postgres_data:
+    driver: local
+
+networks:
+  gp-network:
+    driver: bridge
