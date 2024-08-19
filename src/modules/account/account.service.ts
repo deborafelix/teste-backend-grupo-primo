@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 
 import { InjectRepository } from '@nestjs/typeorm';
 import { QueryRunner, Repository } from 'typeorm';
@@ -7,17 +7,20 @@ import { CreateAccountParams } from './account.dto';
 
 @Injectable()
 export class AccountService {
+  private readonly logger = new Logger(AccountService.name);
   constructor(
     @InjectRepository(Account)
     private accountRepository: Repository<Account>,
   ) {}
 
   async createAccount(params: CreateAccountParams): Promise<Account> {
+    this.logger.debug(`creating account ${params.accountNumber}`);
     const accountExists = await this.accountRepository.findOne({
       where: { accountNumber: params.accountNumber },
     });
 
     if (accountExists) {
+      this.logger.error(`account ${params.accountNumber} already exists`);
       throw new BadRequestException('Account already exists');
     }
 
@@ -28,6 +31,7 @@ export class AccountService {
 
     await this.accountRepository.save(account);
 
+    this.logger.debug(`account ${params.accountNumber} created`);
     return account;
   }
 

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 
 import { DataSource, QueryRunner } from 'typeorm';
 import {
@@ -11,6 +11,7 @@ import { AccountService } from '../account/account.service';
 
 @Injectable()
 export class TransactionService {
+  private readonly logger = new Logger(TransactionService.name);
   constructor(
     private dataSource: DataSource,
     private accountService: AccountService,
@@ -19,6 +20,9 @@ export class TransactionService {
   async createTransaction(
     params: CreateTransactionParams,
   ): Promise<Transaction[]> {
+    this.logger.debug(
+      `creating transaction ${params.type} for ${params.account || params.from}`,
+    );
     const queryRunner = this.dataSource.createQueryRunner();
 
     await queryRunner.connect();
@@ -37,9 +41,16 @@ export class TransactionService {
           break;
       }
       await queryRunner.commitTransaction();
+      this.logger.debug(
+        `created transaction ${params.type} for ${params.account || params.from}`,
+      );
       return transactions;
     } catch (err) {
       await queryRunner.rollbackTransaction();
+      this.logger.error(
+        `error on create transaction ${params.type} for ${params.account || params.from} with error: ${err.message}`,
+        err.stack,
+      );
       throw err;
     } finally {
       await queryRunner.release();
