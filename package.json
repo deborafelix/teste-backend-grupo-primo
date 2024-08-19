@@ -18,7 +18,7 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "typeorm": "ts-node ./node_modules/typeorm/cli",
-    "migration:up": "yarn typeorm migration:run -d ./src/config/typeorm.ts"
+    "migration:up": "yarn build && yarn typeorm migration:run -d ./src/config/typeorm.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.0.0",
