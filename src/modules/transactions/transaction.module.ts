@@ -3,11 +3,12 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Transaction } from './transaction.entity';
 import { TransactionController } from './transaction.controller';
 import { TransactionService } from './transaction.service';
+import { Account } from '../account/account.entity';
 
 @Module({
   controllers: [TransactionController],
   exports: [TransactionService],
   providers: [TransactionService],
-  imports: [TypeOrmModule.forFeature([Transaction])],
+  imports: [TypeOrmModule.forFeature([Account, Transaction])],
 })
-export class AccountModule {}
+export class TransactionModule {}

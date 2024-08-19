@@ -73,10 +73,11 @@ export class TransactionService {
       });
 
       await queryRunner.commitTransaction();
-
+      console.log([debitTransaction, creditTransaction]);
       return [debitTransaction, creditTransaction];
     } catch (err) {
       await queryRunner.rollbackTransaction();
+      throw err;
     } finally {
       await queryRunner.release();
     }
