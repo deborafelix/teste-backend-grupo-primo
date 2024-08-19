@@ -1,90 +1,43 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 
-import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, QueryRunner } from 'typeorm';
 import {
   Transaction,
   TransactionKind,
   TransactionType,
 } from './transaction.entity';
 import { CreateTransactionParams } from './transaction.dto';
-import { Account } from '../account/account.entity';
+import { AccountService } from '../account/account.service';
 
 @Injectable()
 export class TransactionService {
   constructor(
-    @InjectRepository(Transaction)
-    private transactionRepository: Repository<Transaction>,
-    @InjectRepository(Account)
-    private accountRepository: Repository<Account>,
     private dataSource: DataSource,
+    private accountService: AccountService,
   ) {}
 
   async createTransaction(
     params: CreateTransactionParams,
   ): Promise<Transaction[]> {
-    switch (params.type) {
-      case TransactionType.TRANSFERENCIA:
-        return this.createP2P(params);
-      case TransactionType.DEPOSITO:
-        return this.createDeposit(params);
-      case TransactionType.SAQUE:
-        return this.createWithdrawal(params);
-    }
-  }
-
-  async createP2P(params: CreateTransactionParams): Promise<Transaction[]> {
     const queryRunner = this.dataSource.createQueryRunner();
 
     await queryRunner.connect();
     await queryRunner.startTransaction();
     try {
-      const fromAccount = await queryRunner.manager.findOne(Account, {
-        lock: { mode: 'for_no_key_update' },
-        where: { accountNumber: params.from },
-      });
-
-      const toAccount = await queryRunner.manager.findOne(Account, {
-        lock: { mode: 'for_no_key_update' },
-        where: { accountNumber: params.to },
-      });
-
-      if (fromAccount.balance < params.value) {
-        throw new BadRequestException('insufficient balance');
+      let transactions = [];
+      switch (params.type) {
+        case TransactionType.TRANSFERENCIA:
+          transactions = await this.createP2P(params, queryRunner);
+          break;
+        case TransactionType.DEPOSITO:
+          transactions = await this.createDeposit(params, queryRunner);
+          break;
+        case TransactionType.SAQUE:
+          transactions = await this.createWithdrawal(params, queryRunner);
+          break;
       }
-
-      fromAccount.balance -= params.value;
-      toAccount.balance += params.value;
-
-      const debitTransaction = queryRunner.manager.create(Transaction, {
-        account: fromAccount.accountNumber,
-        from: fromAccount.accountNumber,
-        to: toAccount.accountNumber,
-        value: params.value,
-        kind: TransactionKind.DEBITO,
-        type: TransactionType.TRANSFERENCIA,
-      });
-
-      const creditTransaction = queryRunner.manager.create(Transaction, {
-        account: toAccount.accountNumber,
-        from: fromAccount.accountNumber,
-        to: toAccount.accountNumber,
-        value: params.value,
-        kind: TransactionKind.CREDITO,
-        type: TransactionType.TRANSFERENCIA,
-      });
-
-      await queryRunner.manager.save(Transaction, debitTransaction);
-      await queryRunner.manager.save(Transaction, creditTransaction);
-      await queryRunner.manager.update(Account, fromAccount.accountNumber, {
-        balance: fromAccount.balance,
-      });
-      await queryRunner.manager.update(Account, toAccount.accountNumber, {
-        balance: toAccount.balance,
-      });
-
       await queryRunner.commitTransaction();
-      return [debitTransaction, creditTransaction];
+      return transactions;
     } catch (err) {
       await queryRunner.rollbackTransaction();
       throw err;
@@ -93,91 +46,171 @@ export class TransactionService {
     }
   }
 
+  async orderLock(from: number, to: number, queryRunner: QueryRunner) {
+    const accountsToLock = [to, from].sort();
+
+    const account1 = await this.accountService.getAccountAndLock(
+      accountsToLock[0],
+      queryRunner,
+    );
+
+    if (!account1) {
+      throw new BadRequestException(
+        `account number ${accountsToLock[0]} does not exist`,
+      );
+    }
+
+    const account2 = await this.accountService.getAccountAndLock(
+      accountsToLock[1],
+      queryRunner,
+    );
+
+    if (!account2) {
+      throw new BadRequestException(
+        `account number ${accountsToLock[1]} does not exist`,
+      );
+    }
+
+    if (account1.accountNumber === from) {
+      return [account2, account1];
+    }
+    return [account1, account2];
+  }
+
+  async createP2P(
+    params: CreateTransactionParams,
+    queryRunner: QueryRunner,
+  ): Promise<Transaction[]> {
+    if (!params.from || !params.to) {
+      throw new BadRequestException(
+        'for this type of transaction from and to must be provided',
+      );
+    }
+
+    const [fromAccount, toAccount] = await this.orderLock(
+      params.from,
+      params.to,
+      queryRunner,
+    );
+
+    if (fromAccount.balance < params.value) {
+      throw new BadRequestException('insufficient balance');
+    }
+
+    fromAccount.balance -= params.value;
+    toAccount.balance += params.value;
+
+    const debitTransaction = queryRunner.manager.create(Transaction, {
+      account: fromAccount.accountNumber,
+      from: fromAccount.accountNumber,
+      to: toAccount.accountNumber,
+      value: params.value,
+      kind: TransactionKind.DEBITO,
+      type: TransactionType.TRANSFERENCIA,
+    });
+
+    const creditTransaction = queryRunner.manager.create(Transaction, {
+      account: toAccount.accountNumber,
+      from: fromAccount.accountNumber,
+      to: toAccount.accountNumber,
+      value: params.value,
+      kind: TransactionKind.CREDITO,
+      type: TransactionType.TRANSFERENCIA,
+    });
+
+    await queryRunner.manager.save(Transaction, debitTransaction);
+    await queryRunner.manager.save(Transaction, creditTransaction);
+    await this.accountService.updateAccountBalance(
+      fromAccount.accountNumber,
+      fromAccount.balance,
+      queryRunner,
+    );
+    await this.accountService.updateAccountBalance(
+      toAccount.accountNumber,
+      toAccount.balance,
+      queryRunner,
+    );
+
+    return [debitTransaction, creditTransaction];
+  }
+
   async createWithdrawal(
     params: CreateTransactionParams,
+    queryRunner: QueryRunner,
   ): Promise<Transaction[]> {
     if (!params.account) {
       throw new BadRequestException(
         'for this type of transaction account must be provided',
       );
     }
-    const queryRunner = this.dataSource.createQueryRunner();
 
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
-    try {
-      const account = await queryRunner.manager.findOne(Account, {
-        lock: { mode: 'for_no_key_update' },
-        where: { accountNumber: params.account },
-      });
+    const account = await this.accountService.getAccountAndLock(
+      params.account,
+      queryRunner,
+    );
 
-      if (account.balance < params.value) {
-        throw new BadRequestException('insufficient balance');
-      }
-
-      account.balance -= params.value;
-
-      const debitTransaction = queryRunner.manager.create(Transaction, {
-        account: account.accountNumber,
-        value: params.value,
-        kind: TransactionKind.DEBITO,
-        type: TransactionType.SAQUE,
-      });
-
-      await queryRunner.manager.save(Transaction, debitTransaction);
-      await queryRunner.manager.update(Account, account.accountNumber, {
-        balance: account.balance,
-      });
-
-      await queryRunner.commitTransaction();
-
-      return [debitTransaction];
-    } catch (err) {
-      await queryRunner.rollbackTransaction();
-      throw err;
-    } finally {
-      await queryRunner.release();
+    if (!account) {
+      throw new BadRequestException('account does not exist');
     }
+
+    if (account.balance < params.value) {
+      throw new BadRequestException('insufficient balance');
+    }
+
+    account.balance -= params.value;
+
+    const debitTransaction = queryRunner.manager.create(Transaction, {
+      account: account.accountNumber,
+      value: params.value,
+      kind: TransactionKind.DEBITO,
+      type: TransactionType.SAQUE,
+    });
+
+    await queryRunner.manager.save(Transaction, debitTransaction);
+    await this.accountService.updateAccountBalance(
+      account.accountNumber,
+      account.balance,
+      queryRunner,
+    );
+
+    return [debitTransaction];
   }
 
-  async createDeposit(params: CreateTransactionParams): Promise<Transaction[]> {
+  async createDeposit(
+    params: CreateTransactionParams,
+    queryRunner: QueryRunner,
+  ): Promise<Transaction[]> {
     if (!params.account) {
       throw new BadRequestException(
         'for this type of transaction account must be provided',
       );
     }
-    const queryRunner = this.dataSource.createQueryRunner();
 
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
-    try {
-      const account = await queryRunner.manager.findOne(Account, {
-        lock: { mode: 'for_no_key_update' },
-        where: { accountNumber: params.account },
-      });
+    const account = await this.accountService.getAccountAndLock(
+      params.account,
+      queryRunner,
+    );
 
-      account.balance += params.value;
-
-      const creditTransaction = queryRunner.manager.create(Transaction, {
-        account: account.accountNumber,
-        value: params.value,
-        kind: TransactionKind.CREDITO,
-        type: TransactionType.DEPOSITO,
-      });
-
-      await queryRunner.manager.save(Transaction, creditTransaction);
-      await queryRunner.manager.update(Account, account.accountNumber, {
-        balance: account.balance,
-      });
-
-      await queryRunner.commitTransaction();
-
-      return [creditTransaction];
-    } catch (err) {
-      await queryRunner.rollbackTransaction();
-      throw err;
-    } finally {
-      await queryRunner.release();
+    if (!account) {
+      throw new BadRequestException('account does not exist');
     }
+
+    account.balance += params.value;
+
+    const creditTransaction = queryRunner.manager.create(Transaction, {
+      account: account.accountNumber,
+      value: params.value,
+      kind: TransactionKind.CREDITO,
+      type: TransactionType.DEPOSITO,
+    });
+
+    await queryRunner.manager.save(Transaction, creditTransaction);
+    await this.accountService.updateAccountBalance(
+      account.accountNumber,
+      account.balance,
+      queryRunner,
+    );
+
+    return [creditTransaction];
   }
 }

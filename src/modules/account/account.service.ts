@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { QueryRunner, Repository } from 'typeorm';
 import { Account } from './account.entity';
 import { CreateAccountParams } from './account.dto';
 
@@ -29,5 +29,25 @@ export class AccountService {
     await this.accountRepository.save(account);
 
     return account;
+  }
+
+  async getAccountAndLock(
+    accountNumber: number,
+    queryRunner: QueryRunner,
+  ): Promise<Account> {
+    return queryRunner.manager.findOne(Account, {
+      lock: { mode: 'for_no_key_update' },
+      where: { accountNumber },
+    });
+  }
+
+  async updateAccountBalance(
+    accountNumber: number,
+    balance: number,
+    queryRunner: QueryRunner,
+  ) {
+    await queryRunner.manager.update(Account, accountNumber, {
+      balance,
+    });
   }
 }
