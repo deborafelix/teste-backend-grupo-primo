@@ -83,9 +83,9 @@ export class TransactionService {
     }
 
     if (account1.accountNumber === from) {
-      return [account2, account1];
+      return [account1, account2];
     }
-    return [account1, account2];
+    return [account2, account1];
   }
 
   async createP2P(
@@ -107,9 +107,6 @@ export class TransactionService {
     if (fromAccount.balance < params.value) {
       throw new BadRequestException('insufficient balance');
     }
-
-    fromAccount.balance -= params.value;
-    toAccount.balance += params.value;
 
     const debitTransaction = queryRunner.manager.create(Transaction, {
       account: fromAccount.accountNumber,
@@ -133,12 +130,12 @@ export class TransactionService {
     await queryRunner.manager.save(Transaction, creditTransaction);
     await this.accountService.updateAccountBalance(
       fromAccount.accountNumber,
-      fromAccount.balance,
+      fromAccount.balance - params.value,
       queryRunner,
     );
     await this.accountService.updateAccountBalance(
       toAccount.accountNumber,
-      toAccount.balance,
+      toAccount.balance + params.value,
       queryRunner,
     );
 
@@ -168,8 +165,6 @@ export class TransactionService {
       throw new BadRequestException('insufficient balance');
     }
 
-    account.balance -= params.value;
-
     const debitTransaction = queryRunner.manager.create(Transaction, {
       account: account.accountNumber,
       value: params.value,
@@ -180,7 +175,7 @@ export class TransactionService {
     await queryRunner.manager.save(Transaction, debitTransaction);
     await this.accountService.updateAccountBalance(
       account.accountNumber,
-      account.balance,
+      account.balance - params.value,
       queryRunner,
     );
 
@@ -206,8 +201,6 @@ export class TransactionService {
       throw new BadRequestException('account does not exist');
     }
 
-    account.balance += params.value;
-
     const creditTransaction = queryRunner.manager.create(Transaction, {
       account: account.accountNumber,
       value: params.value,
@@ -218,7 +211,7 @@ export class TransactionService {
     await queryRunner.manager.save(Transaction, creditTransaction);
     await this.accountService.updateAccountBalance(
       account.accountNumber,
-      account.balance,
+      account.balance + params.value,
       queryRunner,
     );
 

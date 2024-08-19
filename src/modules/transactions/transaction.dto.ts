@@ -8,11 +8,11 @@ export class CreateTransactionParams {
 
   @IsInt()
   @IsOptional()
-  from: number;
+  from?: number;
 
   @IsInt()
   @IsOptional()
-  to: number;
+  to?: number;
 
   @IsInt()
   @IsNotEmpty()
@@ -20,5 +20,5 @@ export class CreateTransactionParams {
 
   @IsInt()
   @IsOptional()
-  account: number;
+  account?: number;
 }

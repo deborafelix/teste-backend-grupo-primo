@@ -4,7 +4,7 @@ import { ApiTags } from '@nestjs/swagger';
 import { MakeOperationsParams, MakeOperationsResponse } from './app.dto';
 
 @Controller('/')
-@ApiTags('healthcheck')
+@ApiTags('app')
 export class AppController {
   constructor(private readonly appService: AppService) {}
 

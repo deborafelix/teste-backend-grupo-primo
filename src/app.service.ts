@@ -10,7 +10,7 @@ export class AppService {
   ) {}
 
   getStatus(): string {
-    return 'Ok';
+    return 'Healthcheck ok';
   }
 
   async makeOperations(
